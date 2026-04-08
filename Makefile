@@ -60,6 +60,18 @@ cache-clear: ## Clear CakePHP cache
 test: ## Run PHPUnit tests
 	docker compose exec app vendor/bin/phpunit
 
+setup: ## Fix debug env var and generate security salt
+	@echo "Fixing APP_DEBUG env var..."
+	docker compose exec app sed -i "s/env('DEBUG', true)/env('APP_DEBUG', true)/" config/app_local.php
+	@echo "Generating new security salt..."
+	$(eval SALT=$(shell docker compose exec app php -r "echo bin2hex(random_bytes(32));"))
+	@echo "Generated salt: $(SALT)"
+	docker compose exec app sed -i "s/'salt' => env('SECURITY_SALT', '[^']*')/'salt' => env('SECURITY_SALT', '$(SALT)')/" config/app_local.php
+	sed -i "s/SECURITY_SALT=.*/SECURITY_SALT=$(SALT)/" .env
+	@echo "Clearing cache..."
+	docker compose exec app bin/cake cache clear_all 2>/dev/null || true
+	@echo "Setup complete!"
+
 init: ## Initialize CakePHP 5 project
 	@echo "Initializing CakePHP 5 project..."
 	@mkdir -p src
@@ -69,6 +81,8 @@ init: ## Initialize CakePHP 5 project
 	docker compose up -d --build
 	@echo "Waiting for app container..."
 	@sleep 10
+	@echo "Running setup..."
+	$(MAKE) setup
 	@echo "CakePHP 5 project initialized!"
 	@echo "App:        http://localhost"
 	@echo "phpMyAdmin: http://localhost:8080"
